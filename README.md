@@ -1,2 +1,2 @@
 # codepipeline_practice
-repo to practice codepipeline using terraform
+This repo has been build to practice codepipeline through Terraform. We will be using codebuild and webhook to create infrastructure in AWS (IAC)
