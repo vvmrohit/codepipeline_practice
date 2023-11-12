@@ -1,65 +1,69 @@
-resource "aws_codebuild_project" "tf-plan" {
-  name          = "tf-plan"
-  description   = "Terraform Plan stage"
-  service_role  = aws_iam_role.tf-codebuild-role.arn
+data "aws_ssm_parameter" "webhook_secret"{
+  name = "/secrets/eit/webhook_secret"
+}
 
-  artifacts {
-    type = "CODEPIPELINE"
-  }
+module "pipeline" {
+  # checkov:skip=CKV_TF_1: ADD REASON
+  source = "git@github.com:vvmrohit/my_modules.git//aws-codepipeline"
+  repository_owner = var.repository_owner
+  repository_name = var.repository_name
+  buildspec_ci = "pipelines/buildspec.feature.yml"
+  buildspec_cd = "pipelines/buildspec.master.yml"
+  build_image = "aws/codebuild/amazonlinux2-x86_64-standard:4.0"
+  image_pull_credentials_type = "SERVICE_ROLE"
+  project = var.project
+  service = data.aws_caller_identity.current.account_id
+  environment = var.environment
+  github_token_ssm_path = "/Users/rohitpandey/rohit/authentications/github"
+  codebuild_ci_iam_role = module.codebuild_iam_role.arn
+  codebuild_cd_iam_role = module.codebuild_iam_role.arn
+  enable_webhooks = true
+  repository_branch = "main"
+  region = var.region
+  webhook_secret = data.aws_ssm_parameter.webhook_secret.value
+}
 
-  environment {
-    compute_type                = "BUILD_GENERAL1_SMALL"
-    image                       = "hashicorp/terraform:1.4"
-    type                        = "LINUX_CONTAINER"
-    image_pull_credentials_type = "SERVICE_ROLE"
-    registry_credential {
-      credential = var.dockerhub_credentials
-      credential_provider = "SECRETS_MANAGER"
+module "codebuild_iam_role" {
+  # checkov:skip=CKV_TF_1: ADD REASON
+  source = "git@github.com:vvmrohit/my_modules.git//aws-iam-role"
+  project = var.project
+  service = var.project
+  environment = var.environment
+  assume_role_policy = data.aws_iam_policy_document.codebuild_trust_policy_document.json
+  policy_document = data.aws_iam_policy_document.codebuild_policy_document.json
+  service_principals = ["codebuild.amazonaws.com"]
+  tags_override = module.tags.tags 
+}
+
+data "aws_iam_policy_document" "codebuild_trust_policy_document" {
+  statement {
+    effect = "Allow"
+
+    principals {
+      type = "Service"
+
+      identifiers = [
+        "codebuild.amazonaws.com"
+      ]
     }
-  }
-
-  source {
-    type = "CODEPIPELINE"
-    buildspec = "pipelines/buildspec.feature.yml"
+    actions = ["sts:AssumeRole"]
   }
 }
 
-resource "aws_codebuild_project" "tf-apply" {
-  name          = "tf-apply"
-  description   = "Terraform apply stage"
-  service_role  = aws_iam_role.tf-codebuild-role.arn
+data "aws_iam_policy_document" "codebuild_policy_document" {
+  # checkov:skip=CKV_AWS_111: ADD REASON
+  # checkov:skip=CKV_AWS_108: ADD REASON
+  # checkov:skip=CKV_AWS_49: ADD REASON
+  # checkov:skip=CKV_AWS_107: ADD REASON
+  # checkov:skip=CKV_AWS_109: ADD REASON
+  # checkov:skip=CKV_AWS_1: ADD REASON
+  # checkov:skip=CKV_AWS_110: We are restricting access through permisson boundry for all the account
+  statement {
+    effect = "Allow"
 
-  artifacts {
-    type = "CODEPIPELINE"
+    actions = [
+      "*"
+    ]
+    resources = ["*"]
   }
-
-  environment {
-    compute_type                = "BUILD_GENERAL1_SMALL"
-    image                       = "hashicorp/terraform:1.4"
-    type                        = "LINUX_CONTAINER"
-    image_pull_credentials_type = "SERVICE_ROLE"
-    registry_credential {
-      credential = var.dockerhub_credentials
-      credential_provider = "SECRETS_MANAGER"
-    }
-  }
-
-  source {
-    type = "CODEPIPELINE"
-    buildspec = "pipelines/buildspec.master.yml"
-  }
-}
-
-resource "aws_codepipeline" "cicd_pipeline" {
-  name = "tf_pipeline"
-  role_arn = aws_iam_role.tf-codepipline-role.arn
-  artifact_store {
-    type = s3
-    location = aws_s3_bucket.codepipeline_artifact.id
-  }
-   encryption_key {
-      id   = "${local.s3-kms.kms_key}"
-      type = "KMS"
-    }
-
 }
